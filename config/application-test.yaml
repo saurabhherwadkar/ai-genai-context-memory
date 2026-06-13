@@ -1,0 +1,32 @@
+# Test environment overrides
+
+server:
+  host: "127.0.0.1"
+  port: 8001
+  workers: 1
+
+database:
+  path: ":memory:"
+
+graph:
+  max_nodes: 100
+  max_edges_per_node: 10
+
+embeddings:
+  model_name: "all-MiniLM-L6-v2"
+  batch_size: 4
+  cache_size: 50
+
+extraction:
+  enabled: false
+  concurrency: 1
+
+security:
+  rate_limit:
+    requests_per_minute: 1000
+    burst_size: 100
+
+logging:
+  level: "DEBUG"
+  format: "text"
+  file: ""

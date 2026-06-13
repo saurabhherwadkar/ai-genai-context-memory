@@ -1,0 +1,16 @@
+# Development environment overrides
+
+server:
+  host: "127.0.0.1"
+  port: 8000
+  workers: 1
+
+database:
+  path: "./data/memory_graph_dev.db"
+
+extraction:
+  concurrency: 1
+
+logging:
+  level: "DEBUG"
+  format: "text"

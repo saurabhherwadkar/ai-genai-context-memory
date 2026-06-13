@@ -1,0 +1,70 @@
+# Default application configuration
+# Override per environment using application-{env}.yaml
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 4
+
+database:
+  path: "./data/memory_graph.db"
+  journal_mode: "WAL"
+  busy_timeout_ms: 5000
+
+graph:
+  max_nodes: 10000
+  max_edges_per_node: 50
+  sync_interval_seconds: 300
+
+embeddings:
+  model_name: "all-MiniLM-L6-v2"
+  batch_size: 32
+  cache_size: 1000
+  similarity_threshold: 0.92
+
+extraction:
+  enabled: true
+  concurrency: 2
+  retry_attempts: 3
+  retry_delay_seconds: 5
+  provider: "openai"
+  model: "gpt-4o-mini"
+  max_memories_per_conversation: 5
+
+context:
+  max_token_budget: 2000
+  format: "markdown"
+  max_memories_injected: 20
+  ranking_weights:
+    semantic_similarity: 0.35
+    recency: 0.20
+    access_frequency: 0.10
+    confidence: 0.15
+    intensity: 0.10
+    graph_centrality: 0.10
+
+proxy:
+  providers:
+    openai:
+      base_url: "https://api.openai.com/v1"
+      api_key_env: "OPENAI_API_KEY"
+    anthropic:
+      base_url: "https://api.anthropic.com/v1"
+      api_key_env: "ANTHROPIC_API_KEY"
+  timeout_seconds: 120
+  max_request_size_bytes: 1048576
+
+security:
+  rate_limit:
+    requests_per_minute: 60
+    burst_size: 10
+  input:
+    max_content_length: 50000
+    max_tags: 20
+
+logging:
+  level: "INFO"
+  format: "json"
+  file: "./logs/memory_graph.log"
+  max_file_size_mb: 100
+  backup_count: 5

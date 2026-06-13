@@ -1,0 +1,22 @@
+# Production environment overrides
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 4
+
+database:
+  path: "/var/data/memory_graph.db"
+
+extraction:
+  concurrency: 4
+
+security:
+  rate_limit:
+    requests_per_minute: 120
+    burst_size: 20
+
+logging:
+  level: "WARNING"
+  format: "json"
+  file: "/var/log/memory_graph/app.log"
