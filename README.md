@@ -27,6 +27,150 @@ Client App  -->  Proxy (FastAPI)  -->  LLM Provider (OpenAI/Anthropic/any)
 5. Conversation is queued for async background memory extraction
 6. Extraction LLM analyzes the conversation and creates new memory nodes/edges
 
+## End-to-End Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           REQUEST PATH (synchronous)                             │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────┐        ┌──────────────┐        ┌──────────────────┐
+│  Client  │──req──▶│ Proxy Router │──────▶│  Proxy Service    │
+│  App     │        │ (FastAPI)    │        │  (orchestrator)   │
+└──────────┘        └──────────────┘        └────────┬─────────┘
+                                                     │
+                                                     ▼
+                                            ┌─────────────────┐
+                                            │   Interceptor    │
+                                            │  (pre_process)   │
+                                            └────────┬────────┘
+                                                     │
+                    ┌────────────────────────────────────────────────────────┐
+                    │              CONTEXT INJECTION PIPELINE                 │
+                    │                                                        │
+                    │  ┌─────────────────┐    ┌──────────────────────┐      │
+                    │  │ Similarity      │    │  Graph Expansion     │      │
+                    │  │ Search          │───▶│  (BFS 1-2 hops)     │      │
+                    │  │ (embeddings)    │    │  (related memories)  │      │
+                    │  └─────────────────┘    └──────────┬───────────┘      │
+                    │                                    │                   │
+                    │                                    ▼                   │
+                    │                         ┌──────────────────┐          │
+                    │                         │  Context Ranker   │          │
+                    │                         │  (multi-signal    │          │
+                    │                         │   scoring)        │          │
+                    │                         └────────┬─────────┘          │
+                    │                                  │                     │
+                    │                                  ▼                     │
+                    │                         ┌──────────────────┐          │
+                    │                         │  Token Budget     │          │
+                    │                         │  (greedy select   │          │
+                    │                         │   within limit)   │          │
+                    │                         └────────┬─────────┘          │
+                    │                                  │                     │
+                    │                                  ▼                     │
+                    │                         ┌──────────────────┐          │
+                    │                         │ Context Formatter │          │
+                    │                         │ (markdown/xml/    │          │
+                    │                         │  plain text)      │          │
+                    │                         └────────┬─────────┘          │
+                    └──────────────────────────────────┼─────────────────────┘
+                                                      │
+                                                      ▼
+                                            ┌─────────────────────┐
+                                            │  Inject memories     │
+                                            │  into system prompt  │
+                                            └────────┬────────────┘
+                                                     │
+                                                     ▼
+                                            ┌─────────────────────┐
+                                            │  Provider Adapter    │
+                                            │  (OpenAI/Anthropic/  │
+                                            │   Generic)           │
+                                            └────────┬────────────┘
+                                                     │
+                                                     ▼
+                                            ┌─────────────────────┐
+                                            │  Upstream LLM API    │
+                                            │  (forward request)   │
+                                            └────────┬────────────┘
+                                                     │
+                                                     ▼
+┌──────────┐        ┌──────────────┐        ┌─────────────────────┐
+│  Client  │◀─resp──│ Proxy Router │◀───────│  Response returned   │
+│  App     │        │              │        │  to client           │
+└──────────┘        └──────────────┘        └─────────────────────┘
+
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                      EXTRACTION PATH (asynchronous / fire-and-forget)            │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────┐        ┌─────────────────────┐
+│   Interceptor       │        │  Extraction Queue    │
+│   (post_process)    │──────▶│  (asyncio background │
+│   creates record    │        │   worker)            │
+└─────────────────────┘        └──────────┬──────────┘
+                                          │
+                                          ▼
+                               ┌─────────────────────┐
+                               │  Extraction Service  │
+                               │  (orchestrator)      │
+                               └──────────┬──────────┘
+                                          │
+                    ┌─────────────────────────────────────────────┐
+                    │           EXTRACTION PIPELINE               │
+                    │                                             │
+                    │  ┌───────────────────────────────────┐     │
+                    │  │ 1. Format conversation transcript  │     │
+                    │  └──────────────────┬────────────────┘     │
+                    │                     ▼                       │
+                    │  ┌───────────────────────────────────┐     │
+                    │  │ 2. Call Extraction LLM             │     │
+                    │  │    (structured output, low temp)   │     │
+                    │  │    (with retry logic)              │     │
+                    │  └──────────────────┬────────────────┘     │
+                    │                     ▼                       │
+                    │  ┌───────────────────────────────────┐     │
+                    │  │ 3. Parse LLM response into         │     │
+                    │  │    structured memory objects        │     │
+                    │  └──────────────────┬────────────────┘     │
+                    │                     ▼                       │
+                    │  ┌───────────────────────────────────┐     │
+                    │  │ 4. Duplicate detection             │     │
+                    │  │    (embedding similarity check)    │     │
+                    │  └──────────────────┬────────────────┘     │
+                    │                     ▼                       │
+                    │  ┌───────────────────────────────────┐     │
+                    │  │ 5. Persist new memories            │     │
+                    │  │    - MemoryNode → SQLite + Graph   │     │
+                    │  │    - Embedding → Vector store      │     │
+                    │  │    - Edges → Graph relationships   │     │
+                    │  └───────────────────────────────────┘     │
+                    └────────────────────────────────────────────┘
+                                          │
+                                          ▼
+                    ┌─────────────────────────────────────────────┐
+                    │         MEMORY GRAPH (persistent state)      │
+                    │                                              │
+                    │  ┌────────────────┐  ┌──────────────────┐   │
+                    │  │ NetworkX Graph  │  │  SQLite Database  │   │
+                    │  │ (in-memory,    │◀▶│  (nodes, edges,   │   │
+                    │  │  fast queries) │  │   embeddings)     │   │
+                    │  └────────────────┘  └──────────────────┘   │
+                    │         ▲                                    │
+                    │         │  ◀── feeds back into Context       │
+                    │         │      Injection on next request     │
+                    └─────────┼───────────────────────────────────┘
+                              │
+                              │ (loop: next request uses updated graph)
+                              ▼
+                    ┌─────────────────────┐
+                    │  Next client request │
+                    │  gets richer context │
+                    └─────────────────────┘
+```
+
 ## Project Structure
 
 ```
